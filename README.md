@@ -1,5 +1,12 @@
 # bdu-fstec-mcp
 
+[![CI](https://github.com/velvetway/bdu-fstec-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetway/bdu-fstec-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+[![BDU records](https://img.shields.io/badge/BDU-99%2C397%20records-success)](https://github.com/velvetway/bdu-fstec-mirror/blob/main/data/stats.json)
+
+> **EN:** MCP server that gives Claude (or any MCP client) full-text search over the Russian FSTEC vulnerability database (БДУ ФСТЭК, ~100k records): filters by CVSS / severity / vendor / exploit, CVE → BDU mapping. Works outside Russia via a GitHub-hosted mirror.
+
 MCP-сервер, дающий Claude (и любому MCP-клиенту) доступ к БДУ ФСТЭК — российской базе данных угроз безопасности информации. Работает без геоблокировки: снимок хранится в [публичном зеркале](https://github.com/velvetway/bdu-fstec-mirror) как готовая SQLite-база и раздаётся через `raw.githubusercontent.com`.
 
 ## Зачем
@@ -10,7 +17,7 @@ MCP-сервер, дающий Claude (и любому MCP-клиенту) до�
 
 ## Возможности
 
-Четыре инструмента поверх **86 664 записей** (снимок 18.04.2026, источник обновлён 31.12.2025):
+Четыре инструмента поверх **99 397 записей** (снимок 07.11.2026, источник обновлён 06.11.2026):
 
 - `search_bdu_vulnerabilities` — поиск с ранжированием по FTS5 и фильтрами:
   - полнотекстовый запрос с корректной токенизацией кириллицы;
@@ -24,11 +31,11 @@ MCP-сервер, дающий Claude (и любому MCP-клиенту) до�
 
 ## Производительность
 
-| Операция | Время (86k записей) |
+| Операция | Время (~99k записей) |
 | --- | --- |
-| Холодный старт (скачать ~50 МБ SQLite + распаковать) | 5–10 с, один раз |
+| Холодный старт (скачать ~60 МБ SQLite + распаковать) | 5–10 с, один раз |
 | Последующие старты | <50 мс |
-| `search_bdu_vulnerabilities` c FTS5 | 1–20 мс |
+| `search_bdu_vulnerabilities` c FTS5 | 1–30 мс |
 | Фильтр-only (`year`/`severity`/`cvss`) | <5 мс (composite-индексы) |
 | `find_bdu_by_cve` | 1–5 мс |
 | `get_bdu_vulnerability` | <5 мс |
@@ -60,6 +67,20 @@ pip install -e .
   }
 }
 ```
+
+## Запуск в Claude Desktop
+
+В `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`):
+
+```json
+{
+  "mcpServers": {
+    "bdu-fstec": { "command": "bdu-fstec-mcp" }
+  }
+}
+```
+
+Если `bdu-fstec-mcp` не находится в `PATH`, укажите полный путь (`which bdu-fstec-mcp`) или запускайте через `uvx bdu-fstec-mcp`.
 
 ## CLI
 
@@ -114,7 +135,7 @@ src/bdu_fstec_mcp/
 
 ```bash
 pip install -e '.[dev]'
-pytest          # 35 тестов, <1 с
+pytest          # 48 тестов, ~4 с
 ```
 
 Покрыты: FTS5-экранирование, фильтры, маппинг CVE→БДУ, скачивание и fallback кэша, staleness-проверки, форматтеры.
