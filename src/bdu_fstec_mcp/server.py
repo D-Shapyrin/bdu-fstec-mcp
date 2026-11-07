@@ -10,6 +10,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool, ToolAnnotations
 
+from . import __version__
 from ._config import Config
 from .cache import CacheManager
 from .formatters import (
@@ -147,7 +148,7 @@ class BduServer:
 
 
 def _build_mcp_server(bdu: BduServer) -> Server:
-    server: Server = Server("bdu-fstec-mcp")
+    server: Server = Server("bdu-fstec-mcp", version=__version__)
 
     READ_ONLY = ToolAnnotations(
         readOnlyHint=True,
