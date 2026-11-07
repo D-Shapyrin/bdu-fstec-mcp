@@ -104,6 +104,58 @@ SAMPLE_VULS = [
 ]
 
 
+SAMPLE_THREATS = [
+    {
+        "id": "УБИ.2",
+        "num": 2,
+        "name": "Угроза агрегирования данных, передаваемых в грид-системе",
+        "description": "Угроза заключается в возможности раскрытия нарушителем "
+        "защищаемой информации путём перехвата данных, передаваемых в сети.",
+        "source": "Внешний нарушитель со средним потенциалом",
+        "object": "Сетевой трафик",
+        "confidentiality": 1,
+        "integrity": 0,
+        "availability": 0,
+        "added_date": "20.03.2015",
+        "last_upd_date": "08.02.2019",
+        "status": "Опубликована",
+        "remarks": "",
+    },
+    {
+        "id": "УБИ.16",
+        "num": 16,
+        "name": "Угроза доступа к локальным файлам сервера при помощи URL",
+        "description": "Угроза доступа к файлам сервера через подмену URL-запроса "
+        "(path traversal).",
+        "source": "Внешний нарушитель с высоким потенциалом",
+        "object": "Файловая система сервера",
+        "confidentiality": 1,
+        "integrity": 1,
+        "availability": 0,
+        "added_date": "20.03.2015",
+        "last_upd_date": "29.11.2020",
+        "status": "Опубликована",
+        "remarks": "",
+    },
+    {
+        "id": "УБИ.31",
+        "num": 31,
+        "name": "Угроза отказа в обслуживании в грид-системе",
+        "description": "Угроза исчерпания ресурсов и отказа в обслуживании "
+        "узлов грид-системы.",
+        "source": "Внешний нарушитель со средним потенциалом",
+        "object": "Ресурсные центры грид-системы",
+        "confidentiality": 0,
+        "integrity": 0,
+        "availability": 1,
+        "added_date": "20.03.2015",
+        "last_upd_date": "08.02.2019",
+        "status": "Архивная",
+        "remarks": "Угроза объединена с УБИ.30",
+    },
+]
+
+
 SCHEMA = """
 CREATE TABLE vulnerabilities (
     rowid            INTEGER PRIMARY KEY,
@@ -161,6 +213,31 @@ CREATE TABLE cwes (
 CREATE VIRTUAL TABLE vulnerabilities_fts USING fts5(
     name, description, software_names, vendors, cves_joined,
     content = 'vulnerabilities', content_rowid = 'rowid',
+    tokenize = "unicode61 remove_diacritics 2"
+);
+
+CREATE TABLE threats (
+    rowid           INTEGER PRIMARY KEY,
+    id              TEXT NOT NULL UNIQUE,
+    num             INTEGER NOT NULL,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    source          TEXT,
+    object          TEXT,
+    confidentiality INTEGER NOT NULL DEFAULT 0,
+    integrity       INTEGER NOT NULL DEFAULT 0,
+    availability    INTEGER NOT NULL DEFAULT 0,
+    added_date      TEXT,
+    last_upd_date   TEXT,
+    status          TEXT,
+    remarks         TEXT
+);
+CREATE INDEX idx_thr_status ON threats(status);
+CREATE INDEX idx_thr_num    ON threats(num);
+
+CREATE VIRTUAL TABLE threats_fts USING fts5(
+    name, description, source, object,
+    content = 'threats', content_rowid = 'rowid',
     tokenize = "unicode61 remove_diacritics 2"
 );
 
@@ -222,9 +299,38 @@ def build_sample_db(path: Path, snapshot_date: str = "2026-04-18") -> None:
                 (v["id"], cwe),
             )
     conn.execute("INSERT INTO vulnerabilities_fts(vulnerabilities_fts) VALUES('rebuild')")
+    for rowid, t in enumerate(SAMPLE_THREATS, start=1):
+        conn.execute(
+            """INSERT INTO threats
+               (rowid, id, num, name, description, source, object,
+                confidentiality, integrity, availability,
+                added_date, last_upd_date, status, remarks)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                rowid,
+                t["id"],
+                t["num"],
+                t["name"],
+                t["description"],
+                t["source"],
+                t["object"],
+                t["confidentiality"],
+                t["integrity"],
+                t["availability"],
+                t["added_date"],
+                t["last_upd_date"],
+                t["status"],
+                t["remarks"],
+            ),
+        )
+    conn.execute("INSERT INTO threats_fts(threats_fts) VALUES('rebuild')")
     conn.execute("INSERT INTO metadata(key, value) VALUES ('snapshot_date', ?)", (snapshot_date,))
     conn.execute("INSERT INTO metadata(key, value) VALUES ('total', ?)", (str(len(SAMPLE_VULS)),))
-    conn.execute("INSERT INTO metadata(key, value) VALUES ('schema_version', '3')")
+    conn.execute(
+        "INSERT INTO metadata(key, value) VALUES ('threats_total', ?)",
+        (str(len(SAMPLE_THREATS)),),
+    )
+    conn.execute("INSERT INTO metadata(key, value) VALUES ('schema_version', '4')")
     conn.commit()
     conn.close()
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bdu_fstec_mcp.models import Vulnerability
+from bdu_fstec_mcp.models import Threat, Vulnerability
 from bdu_fstec_mcp.store import Store, _escape_fts_query
 
 
@@ -227,3 +227,100 @@ async def test_empty_query_has_no_snippet(sample_db: Path):
     finally:
         store.close()
     assert all(v.match_snippet == "" for v in results)
+
+
+# ---- threats (БнД УБИ) ---------------------------------------------
+
+
+async def test_threat_search_ranks_by_fts(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        results = await store.search_threats("перехват", limit=5)
+    finally:
+        store.close()
+    assert any(t.id == "УБИ.2" for t in results)
+    assert all(isinstance(t, Threat) for t in results)
+    assert any("«" in t.match_snippet for t in results)
+
+
+async def test_threat_search_inflection_tolerance(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        results = await store.search_threats("грид-система", limit=10)
+    finally:
+        store.close()
+    ids = {t.id for t in results}
+    assert "УБИ.2" in ids
+    assert "УБИ.31" in ids
+
+
+async def test_threat_empty_query_returns_number_order(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        results = await store.search_threats("", limit=10)
+    finally:
+        store.close()
+    assert [t.num for t in results] == sorted(t.num for t in results)
+    assert all(t.match_snippet == "" for t in results)
+
+
+async def test_threat_cia_filters(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        only_c = await store.search_threats("", limit=10, confidentiality=True)
+        not_c = await store.search_threats("", limit=10, confidentiality=False)
+        cia = await store.search_threats(
+            "",
+            limit=10,
+            confidentiality=True,
+            integrity=True,
+            availability=False,
+        )
+    finally:
+        store.close()
+    assert {t.id for t in only_c} == {"УБИ.2", "УБИ.16"}
+    assert {t.id for t in not_c} == {"УБИ.31"}
+    assert {t.id for t in cia} == {"УБИ.16"}
+
+
+async def test_threat_get_normalizes_id(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        for raw in ("УБИ.16", "уби.16", "УБИ016", "ubi.16", "16", " 016 "):
+            t = await store.get_threat(raw)
+            assert t is not None, f"failed to normalize {raw!r}"
+            assert t.id == "УБИ.16"
+            assert t.num == 16
+            assert t.url == "https://bdu.fstec.ru/threat/ubi.016"
+            assert t.confidentiality is True
+            assert t.integrity is True
+            assert t.availability is False
+    finally:
+        store.close()
+
+
+async def test_threat_get_missing_returns_none(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        assert await store.get_threat("УБИ.999") is None
+        assert await store.get_threat("") is None
+    finally:
+        store.close()
+
+
+async def test_threat_limit_clamped(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        assert len(await store.search_threats("", limit=0)) == 1
+        assert len(await store.search_threats("", limit=10_000)) == 3
+    finally:
+        store.close()
+
+
+async def test_snapshot_info_includes_threats(sample_db: Path):
+    store = await _make_store(sample_db)
+    try:
+        info = await store.snapshot_info()
+    finally:
+        store.close()
+    assert info.threats_total == 3

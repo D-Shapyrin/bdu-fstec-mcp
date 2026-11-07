@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .models import SnapshotInfo, Vulnerability
+from .models import SnapshotInfo, Threat, Vulnerability
 
 
 _DESC_PREVIEW_LIMIT = 400
@@ -69,6 +69,8 @@ def format_snapshot(info: SnapshotInfo) -> str:
         f"  Идентификаторы: {info.first_id} → {info.last_id}",
         f"  Дата снимка в зеркале: {info.snapshot_date}",
     ]
+    if info.threats_total:
+        lines.append(f"  Угроз из БнД УБИ: {info.threats_total}")
     if info.latest_update:
         lines.append(f"  Последнее обновление источника: {info.latest_update}")
     if info.is_stale:
@@ -76,6 +78,68 @@ def format_snapshot(info: SnapshotInfo) -> str:
     else:
         lines.append("  ✓ Снимок свежий.")
     return "\n".join(lines)
+
+
+def _threat_cia_line(t: Threat) -> str:
+    flags = {
+        "конфиденциальность": t.confidentiality,
+        "целостность": t.integrity,
+        "доступность": t.availability,
+    }
+    affected = [k for k, v in flags.items() if v]
+    if not affected:
+        return "  Нарушаемые свойства: нет"
+    return "  Нарушаемые свойства: " + ", ".join(affected)
+
+
+def format_threat_short(t: Threat) -> str:
+    """One-screen summary of a threat — the search-result format."""
+    lines = [f"{t.id} — {t.name}"]
+    if t.status:
+        lines.append(f"  Статус: {t.status}")
+    if t.object:
+        lines.append(f"  Объект воздействия: {t.object}")
+    lines.append(_threat_cia_line(t))
+    if t.source:
+        lines.append(f"  Источник угрозы: {_truncate(t.source, 200)}")
+    lines.append(f"  {t.url}")
+    body = t.match_snippet or t.description
+    if body:
+        lines.append(f"  {_truncate(body, _DESC_PREVIEW_LIMIT)}")
+    return "\n".join(lines)
+
+
+def format_threat_full(t: Threat) -> str:
+    """Full threat record including dates and remarks."""
+    parts = [format_threat_short(t)]
+    extras: list[str] = []
+    if t.description:
+        extras.append(f"Описание: {t.description}")
+    if t.source:
+        extras.append(f"Источник угрозы: {t.source}")
+    if t.added_date:
+        extras.append(f"Включена в БнД УБИ: {t.added_date}")
+    if t.last_upd_date:
+        extras.append(f"Последнее изменение: {t.last_upd_date}")
+    if t.remarks:
+        extras.append(f"Замечания: {t.remarks}")
+    if extras:
+        parts.append("")
+        parts.extend(extras)
+    return "\n".join(parts)
+
+
+def format_threat_results(
+    results: list[Threat], query: str, total_filters: str = ""
+) -> str:
+    if not results:
+        tail = f" ({total_filters})" if total_filters else ""
+        return f"Ничего не найдено по запросу «{query}»{tail}."
+    header = f"Найдено {len(results)} угроз по запросу «{query}»"
+    if total_filters:
+        header += f" ({total_filters})"
+    body = "\n\n".join(format_threat_short(t) for t in results)
+    return f"{header}:\n\n{body}"
 
 
 def format_search_results(

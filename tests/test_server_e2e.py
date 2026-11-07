@@ -103,6 +103,8 @@ async def test_e2e_handshake_and_list_tools(sample_cache: Path):
             "search_bdu_vulnerabilities",
             "get_bdu_vulnerability",
             "find_bdu_by_cve",
+            "search_bdu_threats",
+            "get_bdu_threat",
             "get_bdu_stats",
         }
     finally:
@@ -170,5 +172,36 @@ async def test_e2e_call_get_vulnerability(sample_cache: Path):
         text = resp["result"]["content"][0]["text"]
         assert "ядра Astra Linux" in text
         assert "Решение: Патч 1.7.4" in text
+    finally:
+        await _shutdown(proc)
+
+
+async def test_e2e_call_search_threats(sample_cache: Path):
+    proc, client = await _spawn(sample_cache)
+    try:
+        resp = await client.send(
+            "tools/call",
+            {
+                "name": "search_bdu_threats",
+                "arguments": {"query": "грид-система", "availability": True},
+            },
+        )
+        text = resp["result"]["content"][0]["text"]
+        assert "УБИ.31" in text
+        assert "УБИ.2" not in text  # availability=0
+    finally:
+        await _shutdown(proc)
+
+
+async def test_e2e_call_get_threat(sample_cache: Path):
+    proc, client = await _spawn(sample_cache)
+    try:
+        resp = await client.send(
+            "tools/call", {"name": "get_bdu_threat", "arguments": {"ubi_id": "16"}}
+        )
+        text = resp["result"]["content"][0]["text"]
+        assert "УБИ.16" in text
+        assert "локальным файлам сервера" in text
+        assert "Нарушаемые свойства" in text
     finally:
         await _shutdown(proc)

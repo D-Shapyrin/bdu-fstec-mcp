@@ -16,6 +16,7 @@ DEFAULT_STATS_URL = (
     f"https://raw.githubusercontent.com/{MIRROR_REPO}/main/data/stats.json"
 )
 DEFAULT_BDU_PAGE_URL = "https://bdu.fstec.ru/vul/{id}"
+DEFAULT_UBI_PAGE_URL = "https://bdu.fstec.ru/threat/ubi.{num:03d}"
 
 
 def _default_cache_dir() -> Path:

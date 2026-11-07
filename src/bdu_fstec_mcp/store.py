@@ -14,8 +14,8 @@ from typing import Iterable
 
 import anyio
 
-from ._config import DEFAULT_BDU_PAGE_URL
-from .models import SnapshotInfo, Software, Vulnerability
+from ._config import DEFAULT_BDU_PAGE_URL, DEFAULT_UBI_PAGE_URL
+from .models import SnapshotInfo, Software, Threat, Vulnerability
 
 
 # Characters NOT in this whitelist are replaced with spaces before tokenizing.
@@ -25,7 +25,7 @@ from .models import SnapshotInfo, Software, Vulnerability
 FTS_SAFE_CHARS = re.compile(r"[^0-9a-zA-Zа-яА-ЯёЁ\s]")
 FTS_RESERVED = {"AND", "OR", "NOT", "NEAR"}
 
-SUPPORTED_SCHEMA_VERSION = "3"
+SUPPORTED_SCHEMA_VERSION = "4"
 
 
 class SchemaVersionMismatch(RuntimeError):
@@ -138,6 +138,26 @@ class Store:
     async def find_by_cve(self, cve_id: str) -> list[Vulnerability]:
         return await anyio.to_thread.run_sync(self._find_by_cve_sync, cve_id)
 
+    async def search_threats(
+        self,
+        query: str,
+        limit: int = 10,
+        confidentiality: bool | None = None,
+        integrity: bool | None = None,
+        availability: bool | None = None,
+    ) -> list[Threat]:
+        return await anyio.to_thread.run_sync(
+            self._search_threats_sync,
+            query,
+            limit,
+            confidentiality,
+            integrity,
+            availability,
+        )
+
+    async def get_threat(self, ubi_id: str) -> Threat | None:
+        return await anyio.to_thread.run_sync(self._get_threat_sync, ubi_id)
+
     async def snapshot_info(
         self,
         is_stale: bool = False,
@@ -248,6 +268,104 @@ class Store:
         rowids = [r["rowid"] for r in rows]
         return self._hydrate(conn, rowids, preserve_order=True)
 
+    def _search_threats_sync(
+        self,
+        query: str,
+        limit: int,
+        confidentiality: bool | None,
+        integrity: bool | None,
+        availability: bool | None,
+    ) -> list[Threat]:
+        conn = self._conn_or_open()
+        limit = max(1, min(limit, 100))
+
+        match = _escape_fts_query(query) if query else ""
+        params: list[object] = []
+        filters: list[str] = []
+
+        if match:
+            sql = (
+                "SELECT t.rowid AS rowid, "
+                "  COALESCE(NULLIF(snippet(threats_fts, 1, '«', '»', '…', 20), ''), "
+                "           snippet(threats_fts, 0, '«', '»', '…', 20)) AS snippet "
+                "FROM threats_fts f "
+                "JOIN threats t ON t.rowid = f.rowid "
+                "WHERE threats_fts MATCH ?"
+            )
+            params.append(match)
+            order = "ORDER BY rank"
+        else:
+            sql = (
+                "SELECT t.rowid AS rowid, '' AS snippet "
+                "FROM threats t WHERE 1=1"
+            )
+            order = "ORDER BY t.num ASC"
+
+        for column, value in (
+            ("confidentiality", confidentiality),
+            ("integrity", integrity),
+            ("availability", availability),
+        ):
+            if value is True:
+                filters.append(f"t.{column} = 1")
+            elif value is False:
+                filters.append(f"t.{column} = 0")
+
+        if filters:
+            sql += " AND " + " AND ".join(filters)
+
+        sql += f" {order} LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(sql, params).fetchall()
+        if not rows:
+            return []
+        rowids = [r["rowid"] for r in rows]
+        snippets = {r["rowid"]: (r["snippet"] or "") for r in rows}
+        placeholders = ",".join("?" * len(rowids))
+        full_rows = conn.execute(
+            f"SELECT * FROM threats WHERE rowid IN ({placeholders})",
+            rowids,
+        ).fetchall()
+        by_rowid = {r["rowid"]: r for r in full_rows}
+        return [
+            self._threat_from_row(by_rowid[rid], snippets.get(rid, ""))
+            for rid in rowids
+            if rid in by_rowid
+        ]
+
+    def _get_threat_sync(self, ubi_id: str) -> Threat | None:
+        conn = self._conn_or_open()
+        key = self._normalize_ubi_id(ubi_id)
+        if not key:
+            return None
+        row = conn.execute(
+            "SELECT rowid, * FROM threats WHERE id = ?", (key,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._threat_from_row(row)
+
+    @staticmethod
+    def _threat_from_row(row: sqlite3.Row, snippet: str = "") -> Threat:
+        return Threat(
+            id=row["id"],
+            num=int(row["num"]),
+            name=row["name"] or "",
+            description=row["description"] or "",
+            source=row["source"] or "",
+            object=row["object"] or "",
+            confidentiality=bool(row["confidentiality"]),
+            integrity=bool(row["integrity"]),
+            availability=bool(row["availability"]),
+            added_date=row["added_date"] or "",
+            last_upd_date=row["last_upd_date"] or "",
+            status=row["status"] or "",
+            remarks=row["remarks"] or "",
+            url=DEFAULT_UBI_PAGE_URL.format(num=int(row["num"])),
+            match_snippet=snippet,
+        )
+
     def _snapshot_info_sync(
         self, is_stale: bool, stale_reason: str
     ) -> SnapshotInfo:
@@ -275,6 +393,7 @@ class Store:
             schema_version=meta.get("schema_version", ""),
             is_stale=is_stale,
             stale_reason=stale_reason,
+            threats_total=int(meta.get("threats_total", "0") or 0),
         )
 
     # ---- hydration ---------------------------------------------------
@@ -389,3 +508,14 @@ class Store:
         if up.isdigit():
             return f"BDU:{up}"
         return up
+
+    @staticmethod
+    def _normalize_ubi_id(raw: str) -> str:
+        """Accept УБИ.16, УБИ016, ubi.16,ubi 16 or a bare 16 → ``УБИ.16``."""
+        key = (raw or "").strip().replace(" ", "").upper()
+        if not key:
+            return key
+        m = re.match(r"^(?:(?:УБИ|UBI)\.?)?(0*)(\d+)$", key)
+        if m:
+            return f"УБИ.{int(m.group(2))}"
+        return key

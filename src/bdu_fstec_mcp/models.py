@@ -41,6 +41,28 @@ class Vulnerability:
 
 
 @dataclass(frozen=True)
+class Threat:
+    """A threat from БнД УБИ (Банк данных угроз безопасности информации)."""
+
+    id: str  # УБИ.1
+    num: int
+    name: str
+    description: str
+    source: str  # характеристика и потенциал нарушителя
+    object: str  # объект воздействия
+    confidentiality: bool
+    integrity: bool
+    availability: bool
+    added_date: str
+    last_upd_date: str
+    status: str  # Опубликована / Архивная
+    remarks: str
+    url: str
+    match_snippet: str = ""  # FTS5 snippet() output; empty unless returned
+    # by a full-text search
+
+
+@dataclass(frozen=True)
 class SnapshotInfo:
     """Details about the local cached snapshot of БДУ."""
 
@@ -52,3 +74,4 @@ class SnapshotInfo:
     schema_version: str
     is_stale: bool
     stale_reason: str  # human-readable diagnostic, empty if fresh
+    threats_total: int = 0

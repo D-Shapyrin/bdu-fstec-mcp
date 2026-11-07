@@ -18,6 +18,9 @@ from .formatters import (
     format_search_results,
     format_snapshot,
     format_short,
+    format_threat_full,
+    format_threat_results,
+    format_threat_short,
 )
 from .store import Store
 
@@ -139,6 +142,45 @@ class BduServer:
         body = "\n\n".join(format_short(v) for v in results)
         return header + body
 
+    async def tool_search_threats(self, args: dict[str, Any]) -> str:
+        store = await self._ensure_ready()
+        query = (args.get("query") or "").strip()
+        limit = int(args.get("limit", 10))
+        filters_parts: list[str] = []
+
+        cia = {
+            "confidentiality": "нарушение конфиденциальности",
+            "integrity": "нарушение целостности",
+            "availability": "нарушение доступности",
+        }
+        kwargs: dict[str, bool | None] = {}
+        for key, label in cia.items():
+            value = args.get(key)
+            if isinstance(value, bool):
+                kwargs[key] = value
+                filters_parts.append(
+                    f"{label}: {'да' if value else 'нет'}"
+                )
+            else:
+                kwargs[key] = None
+
+        results = await store.search_threats(
+            query=query, limit=limit, **kwargs
+        )
+        return format_threat_results(
+            results, query or "(без текстового запроса)", ", ".join(filters_parts)
+        )
+
+    async def tool_get_threat(self, args: dict[str, Any]) -> str:
+        store = await self._ensure_ready()
+        ubi_id = (args.get("ubi_id") or "").strip()
+        if not ubi_id:
+            return "Укажите идентификатор угрозы (например, УБИ.16 или 16)."
+        t = await store.get_threat(ubi_id)
+        if t is None:
+            return f"Угроза {ubi_id} не найдена в БнД УБИ."
+        return format_threat_full(t)
+
     async def tool_stats(self, args: dict[str, Any]) -> str:
         store = await self._ensure_ready()
         info = await store.snapshot_info(
@@ -167,7 +209,7 @@ def _build_mcp_server(bdu: BduServer) -> Server:
                     "Поиск уязвимостей в БДУ ФСТЭК (Банк данных угроз "
                     "безопасности информации России) по полнотекстовому "
                     "запросу с FTS5-ранжированием (BM25) и опциональным "
-                    "фильтрам. Индекс содержит ~86 000 записей: заголовок, "
+                    "фильтрам. Индекс содержит ~99 000 записей: заголовок, "
                     "описание, уязвимое ПО, вендор, CVE-идентификаторы. "
                     "Все результаты read-only (локальная SQLite-копия), "
                     "без побочных эффектов и сетевых запросов. Пустой query "
@@ -338,11 +380,131 @@ def _build_mcp_server(bdu: BduServer) -> Server:
                 },
             ),
             Tool(
+                name="search_bdu_threats",
+                title="Search БнД УБИ threats",
+                description=(
+                    "Поиск угроз безопасности информации в БнД УБИ ФСТЭК "
+                    "(Банк данных угроз безопасности информации) по "
+                    "полнотекстовому запросу с FTS5-ранжированием (BM25) "
+                    "и фильтрами по нарушаемым свойствам безопасности. "
+                    "Индекс содержит ~227 угроз: наименование, описание, "
+                    "источник угрозы (характеристика и потенциал "
+                    "нарушителя), объект воздействия. Каждый результат "
+                    "включает идентификатор УБИ.N, нарушение "
+                    "конфиденциальности / целостности / доступности, "
+                    "статус (Опубликована / Архивная) и ссылку на "
+                    "карточку bdu.fstec.ru. Пустой query + фильтры → "
+                    "все угрозы по возрастанию номера. Применение: "
+                    "идентификация актуальных угроз (СП. 132156.1.006, "
+                    "187-ФЗ, КИИ), подбор угроз для модели угроз АСУ / "
+                    "ГИС / ОС по объекту воздействия и нарушаемым "
+                    "свойствам. Read-only, локальная SQLite-копия."
+                ),
+                annotations=READ_ONLY,
+                inputSchema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": (
+                                "Полнотекстовый запрос (русский). Токены "
+                                "автоматически превращаются в префиксный "
+                                "поиск с обрезкой окончания для "
+                                "кириллицы, так что «контейнер» находит "
+                                "«контейнеров» и «контейнеризации». "
+                                "Примеры: «docker контейнер», «перехват "
+                                "сетевой трафик», «вредоносный код»."
+                            ),
+                            "examples": [
+                                "docker контейнер",
+                                "перехват сетевой трафик",
+                                "вредоносный код",
+                            ],
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": (
+                                "Максимум угроз в выдаче, 1–100. Всего в "
+                                "БнД УБИ ~227 угроз — limit 100 покрывает "
+                                "половину базы."
+                            ),
+                            "default": 10,
+                            "minimum": 1,
+                            "maximum": 100,
+                        },
+                        "confidentiality": {
+                            "type": "boolean",
+                            "description": (
+                                "true → только угрозы, нарушающие "
+                                "конфиденциальность; false → только не "
+                                "нарушающие."
+                            ),
+                        },
+                        "integrity": {
+                            "type": "boolean",
+                            "description": (
+                                "true → только угрозы, нарушающие "
+                                "целостность; false → только не "
+                                "нарушающие."
+                            ),
+                        },
+                        "availability": {
+                            "type": "boolean",
+                            "description": (
+                                "true → только угрозы, нарушающие "
+                                "доступность; false → только не "
+                                "нарушающие."
+                            ),
+                        },
+                    },
+                },
+            ),
+            Tool(
+                name="get_bdu_threat",
+                title="Get one БнД УБИ threat by identifier",
+                description=(
+                    "Возвращает полную карточку угрозы из БнД УБИ ФСТЭК "
+                    "по идентификатору `УБИ.N` (например, `УБИ.16`). "
+                    "Включает наименование, полное описание, источник "
+                    "угрозы (характеристику и потенциал нарушителя), "
+                    "объект воздействия, нарушаемые свойства "
+                    "(конфиденциальность / целостность / доступность), "
+                    "даты включения и последнего изменения, статус "
+                    "(Опубликована / Архивная), замечания и URL карточки "
+                    "на bdu.fstec.ru. Read-only. Допускаются форматы "
+                    "`УБИ.16`, `УБИ016`, `ubi.16` или просто `16`."
+                ),
+                annotations=READ_ONLY,
+                inputSchema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "ubi_id": {
+                            "type": "string",
+                            "description": (
+                                "Идентификатор угрозы БнД УБИ. Принимаются "
+                                "форматы `УБИ.16`, `УБИ016`, `ubi.16`, "
+                                "или просто `16`."
+                            ),
+                            "pattern": "^(УБИ|уби|ubi|UBI)\\.?\\s?\\d{1,3}$|^\\d{1,3}$",
+                            "examples": [
+                                "УБИ.16",
+                                "16",
+                                "ubi.016",
+                            ],
+                        }
+                    },
+                    "required": ["ubi_id"],
+                },
+            ),
+            Tool(
                 name="get_bdu_stats",
                 title="БДУ snapshot statistics",
                 description=(
                     "Метаданные текущего локального снимка БДУ: общее "
-                    "число записей, диапазон идентификаторов "
+                    "число записей об уязвимостях, число угроз из БнД "
+                    "УБИ, диапазон идентификаторов "
                     "`BDU:2014-00001 → BDU:YYYY-NNNNN`, дата снимка в "
                     "зеркале, последнее обновление источника. "
                     "Автоматически проверяет, не устарел ли локальный "
@@ -369,6 +531,10 @@ def _build_mcp_server(bdu: BduServer) -> Server:
                 text = await bdu.tool_get(arguments)
             elif name == "find_bdu_by_cve":
                 text = await bdu.tool_find_by_cve(arguments)
+            elif name == "search_bdu_threats":
+                text = await bdu.tool_search_threats(arguments)
+            elif name == "get_bdu_threat":
+                text = await bdu.tool_get_threat(arguments)
             elif name == "get_bdu_stats":
                 text = await bdu.tool_stats(arguments)
             else:

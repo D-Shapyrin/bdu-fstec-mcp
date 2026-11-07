@@ -7,8 +7,11 @@ from bdu_fstec_mcp.formatters import (
     format_search_results,
     format_snapshot,
     format_short,
+    format_threat_full,
+    format_threat_results,
+    format_threat_short,
 )
-from bdu_fstec_mcp.models import SnapshotInfo, Software, Vulnerability
+from bdu_fstec_mcp.models import SnapshotInfo, Software, Threat, Vulnerability
 
 
 def _sample_vul(**overrides) -> Vulnerability:
@@ -126,3 +129,76 @@ def test_short_shows_extra_software_count():
     )
     text = format_short(vul)
     assert "(+3)" in text  # 8 items, 5 shown
+
+
+# ---- threats (БнД УБИ) ---------------------------------------------
+
+
+def _sample_threat(**overrides) -> Threat:
+    base = dict(
+        id="УБИ.16",
+        num=16,
+        name="Угроза доступа к локальным файлам сервера при помощи URL",
+        description="Угроза доступа к файлам сервера через подмену URL-запроса.",
+        source="Внешний нарушитель с высоким потенциалом",
+        object="Файловая система сервера",
+        confidentiality=True,
+        integrity=True,
+        availability=False,
+        added_date="20.03.2015",
+        last_upd_date="29.11.2020",
+        status="Опубликована",
+        remarks="",
+        url="https://bdu.fstec.ru/threat/ubi.016",
+    )
+    base.update(overrides)
+    return Threat(**base)
+
+
+def test_threat_short_includes_core_fields():
+    text = format_threat_short(_sample_threat())
+    assert "УБИ.16" in text
+    assert "Опубликована" in text
+    assert "Файловая система сервера" in text
+    assert "конфиденциальность" in text
+    assert "целостность" in text
+    assert "доступность" not in text.split("Нарушаемые свойства")[1].split("\n")[0]
+    assert "bdu.fstec.ru" in text
+
+
+def test_threat_short_no_cia_affected():
+    text = format_threat_short(
+        _sample_threat(confidentiality=False, integrity=False, availability=False)
+    )
+    assert "Нарушаемые свойства: нет" in text
+
+
+def test_threat_full_adds_dates_and_remarks():
+    text = format_threat_full(_sample_threat(remarks="Требует уточнения"))
+    assert "Включена в БнД УБИ: 20.03.2015" in text
+    assert "Последнее изменение: 29.11.2020" in text
+    assert "Замечания: Требует уточнения" in text
+
+
+def test_threat_results_empty_and_header():
+    assert format_threat_results([], "x") == "Ничего не найдено по запросу «x»."
+    text = format_threat_results([_sample_threat()], "url", "нарушение целостности: да")
+    assert "Найдено 1 угроз" in text
+    assert "нарушение целостности: да" in text
+    assert "УБИ.16" in text
+
+
+def test_snapshot_shows_threats_total():
+    info = SnapshotInfo(
+        snapshot_date="2026-11-07",
+        total=99397,
+        first_id="BDU:2014-00001",
+        last_id="BDU:2026-05547",
+        latest_update="31.12.2025",
+        schema_version="4",
+        is_stale=False,
+        stale_reason="",
+        threats_total=227,
+    )
+    text = format_snapshot(info)
+    assert "Угроз из БнД УБИ: 227" in text
