@@ -51,7 +51,7 @@ pip install bdu-fstec-mcp
 Или локально:
 
 ```bash
-git clone https://github.com/velvetway/bdu-fstec-mcp
+git clone https://github.com/D-Shapyrin/bdu-fstec-mcp
 cd bdu-fstec-mcp
 pip install -e .
 ```
