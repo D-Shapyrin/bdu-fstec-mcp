@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-MIRROR_REPO = "velvetway/bdu-fstec-mirror"
+MIRROR_REPO = "D-Shapyrin/bdu-fstec-mirror"
 
 DEFAULT_DB_URL = (
     f"https://github.com/{MIRROR_REPO}/raw/main/data/bdu.sqlite.gz"

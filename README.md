@@ -1,13 +1,13 @@
 # bdu-fstec-mcp
 
-[![CI](https://github.com/velvetway/bdu-fstec-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetway/bdu-fstec-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/D-Shapyrin/bdu-fstec-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/D-Shapyrin/bdu-fstec-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
-[![BDU records](https://img.shields.io/badge/BDU-99%2C397%20records-success)](https://github.com/velvetway/bdu-fstec-mirror/blob/main/data/stats.json)
+[![BDU records](https://img.shields.io/badge/BDU-99%2C397%20records-success)](https://github.com/D-Shapyrin/bdu-fstec-mirror/blob/main/data/stats.json)
 
 > **EN:** MCP server that gives Claude (or any MCP client) full-text search over the Russian FSTEC vulnerability database (БДУ ФСТЭК, ~100k records): filters by CVSS / severity / vendor / exploit, CVE → BDU mapping. Works outside Russia via a GitHub-hosted mirror.
 
-MCP-сервер, дающий Claude (и любому MCP-клиенту) доступ к БДУ ФСТЭК — российской базе данных угроз безопасности информации. Работает без геоблокировки: снимок хранится в [публичном зеркале](https://github.com/velvetway/bdu-fstec-mirror) как готовая SQLite-база и раздаётся через `raw.githubusercontent.com`.
+MCP-сервер, дающий Claude (и любому MCP-клиенту) доступ к БДУ ФСТЭК — российской базе данных угроз безопасности информации. Работает без геоблокировки: снимок хранится в [публичном зеркале](https://github.com/D-Shapyrin/bdu-fstec-mirror) как готовая SQLite-база и раздаётся через `raw.githubusercontent.com`.
 
 ## Зачем
 
@@ -129,7 +129,7 @@ src/bdu_fstec_mcp/
     server.py         MCP stdio-сервер и диспетчер тулов
 ```
 
-Данные живут в отдельном репозитории [bdu-fstec-mirror](https://github.com/velvetway/bdu-fstec-mirror). MCP их только читает.
+Данные живут в отдельном репозитории [bdu-fstec-mirror](https://github.com/D-Shapyrin/bdu-fstec-mirror). MCP их только читает.
 
 ## Разработка
 
